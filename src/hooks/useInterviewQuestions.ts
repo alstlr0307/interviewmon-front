@@ -133,10 +133,9 @@ export function useInterviewQuestions(
   /* ============================================================
    * GPT V5 채점 호출
    * ============================================================ */
-  const runGrade = useCallback(
-    async (answer: string) => {
+  const runGrade = useCallback(async (answer: string) => {
       if (!sessionId || !current) return null;
-      const trimmed = (answer || "").trim();
+      const trimmed = answer.trim();
       if (trimmed.length < minChars) return null;
 
       const key = `${sessionId}:${current.id}:${hashString(trimmed)}`;
@@ -149,14 +148,15 @@ export function useInterviewQuestions(
         const res = await gradeAnswer(sessionId, current.id, trimmed);
         if (!isMounted.current || inflightTokenRef.current !== token) return null;
 
-        cache.set(key, res);
-        return res;
+        // 🔥 프론트 구조에 맞게 ai만 리턴
+        const ai: AiResult = res;
+
+        cache.set(key, ai);
+        return ai;
       } catch {
-        return null;
-      }
-    },
-    [sessionId, current, minChars]
-  );
+      return null;
+    }
+  }, [sessionId, current, minChars]);
 
   /* ============================================================
    * Answer 입력 핸들러 (디바운스)
@@ -180,7 +180,8 @@ export function useInterviewQuestions(
         setGrading(false);
 
         if (r) {
-          setAi(r);
+          const ai: AiResult = r;
+          setAi(ai);
 
           setList((prev) =>
             prev.map((q) =>
@@ -188,7 +189,7 @@ export function useInterviewQuestions(
                 ? {
                     ...q,
                     answer: text,
-                    score: r.score
+                    score: ai.score
                   }
                 : q
             )
@@ -198,7 +199,7 @@ export function useInterviewQuestions(
             try {
               await saveAnswer(sessionId, current.id, {
                 answer: text,
-                score: r.score
+                score: ai.score
               });
             } catch {}
           }
