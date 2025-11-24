@@ -11,13 +11,13 @@ import {
 } from "recharts";
 
 /* =============================================================
- * Props (서버 스키마 100% 호환)
+ * Props (백엔드 스키마 100% 호환)
  * ============================================================= */
 type AIFeedbackItem = { text: string; level: number | null };
 type AIFollowItem = string | { question: string; reason?: string };
 
 type Props = {
-  feedback: string;
+  feedback?: string | null;
   score?: number | null;
   answer?: string | null;
   question?: string | null;
@@ -25,24 +25,59 @@ type Props = {
   summary_interviewer?: string | null;
   summary_coach?: string | null;
 
-  strengths?: string[] | AIFeedbackItem[] | null;
-  gaps?: string[] | AIFeedbackItem[] | null;
-  adds?: string[] | AIFeedbackItem[] | null;
+  strengths?: any[] | null;
+  gaps?: any[] | null;
+  adds?: any[] | null;
   pitfalls?: AIFeedbackItem[] | null;
-  next?: string[] | AIFeedbackItem[] | null;
+  next?: any[] | null;
 
   polished?: string | null;
-
   keywords?: string[] | null;
   category?: string | null;
 
-  chart?: Record<string, number> | null;
+  chart?: Record<string, number | string> | null;
 
   follow_up_questions?: AIFollowItem[] | null;
 };
 
 /* =============================================================
- * 분석 유틸
+ * 유틸리티 — 어떤 타입이 와도 배열/문자열 기준으로 정규화
+ * ============================================================= */
+const normalizeList = (arr?: any[] | null): string[] => {
+  if (!arr) return [];
+  return arr
+    .map((v) => {
+      if (typeof v === "string") return v;
+      if (v && typeof v.text === "string") return v.text;
+      return "";
+    })
+    .filter(Boolean);
+};
+
+const normalizePitfalls = (arr?: AIFeedbackItem[] | null): AIFeedbackItem[] => {
+  if (!arr) return [];
+  return arr
+    .map((v) => {
+      if (!v) return null;
+      if (typeof v === "string") return { text: v, level: null };
+      const t = v.text ?? "";
+      return t ? { text: t, level: Number.isFinite(v.level) ? v.level : null } : null;
+    })
+    .filter(Boolean) as AIFeedbackItem[];
+};
+
+const normalizeChart = (chart?: Record<string, number | string> | null) => {
+  if (!chart) return {};
+  const out: Record<string, number> = {};
+  Object.entries(chart).forEach(([k, v]) => {
+    const num = typeof v === "string" ? Number(v) : v;
+    out[k] = Number.isFinite(num) ? num : 0;
+  });
+  return out;
+};
+
+/* =============================================================
+ * STAR / Specificity 분석
  * ============================================================= */
 function analyzeSTAR(a?: string | null) {
   const text = a || "";
@@ -66,7 +101,9 @@ function analyzeSpecificity(a?: string | null) {
   };
 }
 
-/* ---------------- Gauge ---------------- */
+/* =============================================================
+ * Gauge
+ * ============================================================= */
 function Gauge({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="flex flex-col gap-1 w-full">
@@ -84,7 +121,9 @@ function Gauge({ label, value, color }: { label: string; value: number; color: s
   );
 }
 
-/* ---------------- SafeSection ---------------- */
+/* =============================================================
+ * Section
+ * ============================================================= */
 const Section = ({
   title,
   color,
@@ -99,6 +138,8 @@ const Section = ({
     rose: "bg-gradient-to-br from-rose-400/20 to-rose-600/10 border-rose-500/30",
     sky: "bg-gradient-to-br from-sky-400/20 to-sky-600/10 border-sky-500/30",
   };
+
+  if (!points || points.length === 0) return null;
 
   return (
     <motion.div
@@ -117,7 +158,7 @@ const Section = ({
 };
 
 /* =============================================================
- * 메인 컴포넌트
+ * Main Component
  * ============================================================= */
 export default function AiFeedback({
   feedback,
@@ -138,26 +179,30 @@ export default function AiFeedback({
   const star = useMemo(() => analyzeSTAR(answer), [answer]);
   const spec = useMemo(() => analyzeSpecificity(answer), [answer]);
 
-  const normalizeList = (arr?: any[] | null): string[] => {
-    if (!arr) return [];
-    return arr.map((v) => (typeof v === "string" ? v : v.text));
-  };
+  const pit = normalizePitfalls(pitfalls);
+  const str = normalizeList(strengths);
+  const gap = normalizeList(gaps);
+  const add = normalizeList(adds);
+  const nxt = normalizeList(next);
+  const kw = keywords ?? [];
+
+  const safeChart = normalizeChart(chart);
 
   const hasStructured =
     !!summary_interviewer ||
     !!summary_coach ||
-    (strengths && strengths.length > 0) ||
-    (gaps && gaps.length > 0) ||
-    (adds && adds.length > 0) ||
-    (pitfalls && pitfalls.length > 0) ||
-    (next && next.length > 0) ||
+    str.length > 0 ||
+    gap.length > 0 ||
+    add.length > 0 ||
+    pit.length > 0 ||
+    nxt.length > 0 ||
     !!polished ||
-    (keywords && keywords.length > 0);
+    kw.length > 0;
 
   /* ---------------- Radar data ---------------- */
   const radarData =
-    chart && Object.keys(chart).length > 0
-      ? Object.entries(chart).map(([key, val]) => ({
+    Object.keys(safeChart).length > 0
+      ? Object.entries(safeChart).map(([key, val]) => ({
           subject:
             {
               star_s: "상황",
@@ -205,7 +250,7 @@ export default function AiFeedback({
         )}
       </div>
 
-      {/* Summary */}
+      {/* Summary OR fallback feedback */}
       {hasStructured ? (
         <div className="bg-slate-800/60 border border-violet-700/30 rounded-lg p-4 space-y-3 shadow-inner">
           {summary_interviewer && (
@@ -254,38 +299,40 @@ export default function AiFeedback({
       </div>
 
       {/* Keywords */}
-      {keywords && (
+      {kw.length > 0 && (
         <div className="bg-slate-800/60 border border-sky-700/20 rounded-lg p-4">
           <div className="font-semibold text-sky-300 mb-1">🔍 핵심 키워드</div>
-          <p className="text-sm text-gray-300 leading-relaxed">{keywords.join(", ")}</p>
+          <p className="text-sm text-gray-300 leading-relaxed">{kw.join(", ")}</p>
         </div>
       )}
 
       {/* Polished */}
-      {polished && (
+      {polished && polished.trim().length > 0 && (
         <div className="bg-slate-900/60 border border-emerald-600/20 rounded-lg p-4 shadow-inner">
           <div className="font-semibold text-emerald-300 mb-2">📝 모범답변</div>
-          <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{polished}</pre>
+          <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
+            {polished}
+          </pre>
         </div>
       )}
 
-      {/* Sections */}
+      {/* Strengths / Gaps / Adds / Pitfalls / Next */}
       <div className="space-y-4">
-        {strengths && <Section title="💪 Strengths" color="emerald" points={normalizeList(strengths)} />}
-        {gaps && <Section title="🩹 개선 포인트" color="rose" points={normalizeList(gaps)} />}
-        {adds && <Section title="➕ 추가 포인트" color="sky" points={normalizeList(adds)} />}
-        {pitfalls && (
+        {str.length > 0 && <Section title="💪 Strengths" color="emerald" points={str} />}
+        {gap.length > 0 && <Section title="🩹 개선 포인트" color="rose" points={gap} />}
+        {add.length > 0 && <Section title="➕ 추가 포인트" color="sky" points={add} />}
+        {pit.length > 0 && (
           <Section
             title="⚠️ 위험 요소"
             color="rose"
-            points={pitfalls.map((p) => `레벨 ${p.level ?? "?"}: ${p.text}`)}
+            points={pit.map((p) => `레벨 ${p.level ?? "?"}: ${p.text}`)}
           />
         )}
-        {next && <Section title="📈 다음 단계" color="emerald" points={normalizeList(next)} />}
+        {nxt.length > 0 && <Section title="📈 다음 단계" color="emerald" points={nxt} />}
       </div>
 
       {/* Follow-up */}
-      {follow_up_questions && (
+      {follow_up_questions && follow_up_questions.length > 0 && (
         <div className="bg-slate-800/60 border border-yellow-700/30 rounded-lg p-4 shadow-inner">
           <div className="font-semibold text-yellow-300 mb-2">🎯 예상 후속 질문</div>
           <ul className="list-disc list-inside text-sm text-gray-300 space-y-1">
