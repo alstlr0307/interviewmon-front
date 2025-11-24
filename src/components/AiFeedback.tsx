@@ -127,6 +127,7 @@ const Section = ({
  * 메인 컴포넌트
  * ============================================================= */
 export default function AiFeedback({
+  feedback,
   score,
   answer,
   summary_interviewer,
@@ -143,6 +144,18 @@ export default function AiFeedback({
 }: Props) {
   const star = useMemo(() => analyzeSTAR(answer), [answer]);
   const spec = useMemo(() => analyzeSpecificity(answer), [answer]);
+
+  /* ---------------- 구조화 데이터 존재 여부 ---------------- */
+  const hasStructured =
+    !!summary_interviewer ||
+    !!summary_coach ||
+    (strengths && strengths.length > 0) ||
+    (gaps && gaps.length > 0) ||
+    (adds && adds.length > 0) ||
+    (pitfalls && pitfalls.length > 0) ||
+    (next && next.length > 0) ||
+    !!polished ||
+    (keywords && keywords.length > 0);
 
   /* ---------------- Radar data ---------------- */
   const radarData = chart
@@ -196,9 +209,9 @@ export default function AiFeedback({
       </div>
 
       {/* =============================================================
-       * Summary
+       * Summary / Text Feedback
        * ============================================================= */}
-      {(summary_interviewer || summary_coach) && (
+      {hasStructured ? (
         <div className="bg-slate-800/60 border border-violet-700/30 rounded-lg p-4 space-y-3 shadow-inner">
           {summary_interviewer && (
             <div>
@@ -214,7 +227,14 @@ export default function AiFeedback({
             </div>
           )}
         </div>
-      )}
+      ) : feedback ? (
+        // 구조화된 필드가 없고, 문자열 feedback만 있을 때
+        <div className="bg-slate-800/60 border border-violet-700/30 rounded-lg p-4 shadow-inner">
+          <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
+            {feedback}
+          </pre>
+        </div>
+      ) : null}
 
       {/* =============================================================
        * Gauge
@@ -234,12 +254,7 @@ export default function AiFeedback({
             <PolarGrid stroke="#3f3f46" />
             <PolarAngleAxis dataKey="subject" tick={{ fill: "#a5b4fc", fontSize: 12 }} />
             <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} />
-            <Radar
-              dataKey="A"
-              stroke="#8b5cf6"
-              fill="url(#colorAI)"
-              fillOpacity={0.6}
-            />
+            <Radar dataKey="A" stroke="#8b5cf6" fill="url(#colorAI)" fillOpacity={0.6} />
             <defs>
               <linearGradient id="colorAI" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0%" stopColor="#a78bfa" />
