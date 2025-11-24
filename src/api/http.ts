@@ -54,7 +54,7 @@ export function clearTokens() {
 const http = axios.create({
   baseURL: API_BASE || "/api",
   withCredentials: true,
-  timeout: 15000,
+  timeout: 60000,
 });
 
 // =====================================================
