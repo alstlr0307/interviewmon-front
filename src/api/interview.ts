@@ -1,5 +1,6 @@
 // src/api/interview.ts
 // 백엔드(index.js)와 1:1 매칭되는 인터뷰 API 클라이언트
+
 import http from "./http";
 
 /* -------------------------------------------
@@ -32,9 +33,11 @@ export type StartOptions = {
 export type AiResult = {
   score: number;
   grade: "S" | "A" | "B" | "C" | "D" | "F";
-  
+
+  // 한 줄 요약(면접관/코치 중 택1)
   summary?: string | null;
 
+  // 상세 필드들
   summary_interviewer?: string | null;
   summary_coach?: string | null;
   strengths?: string[] | null;
@@ -132,24 +135,23 @@ export async function gradeAnswerAPI(
   sqid: number,
   answer: string
 ): Promise<AiResult> {
-
   const { data } = await http.post(
     `/sessions/${sessionId}/questions/${sqid}/grade`,
     { answer }
   );
 
-  const ai = data.ai;
+  const ai = data.ai || {};
   const score = Number(ai.score ?? 0);
 
   return {
     score,
     grade: ai.grade ?? gradeFromScore(score),
-    // 🔥 summary는 interviewer 요약으로 통일
+
+    // summary는 interviewer / coach 중 하나로 통일
     summary: ai.summary_interviewer ?? ai.summary_coach ?? null,
 
-    summary_interviewer: ai.summary_interviewer,
-    summary_coach: ai.summary_coach,
-
+    summary_interviewer: ai.summary_interviewer ?? null,
+    summary_coach: ai.summary_coach ?? null,
     strengths: ai.strengths ?? null,
     gaps: ai.gaps ?? null,
     adds: ai.adds ?? null,
@@ -162,7 +164,7 @@ export async function gradeAnswerAPI(
   };
 }
 
-// 호환 유지
+// 호환 유지 alias
 export const gradeAnswer = gradeAnswerAPI;
 
 /* ============================================================

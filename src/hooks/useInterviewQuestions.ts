@@ -55,16 +55,17 @@ export function useInterviewQuestions(
     };
   }, []);
 
+  // 세션 변경 시 캐시 초기화
   useEffect(() => {
     cache.clear();
   }, [sessionId]);
 
   const timerRef = useRef<number | null>(null);
-  const inflightTokenRef = useRef<string | null>(null);
   const qStartRef = useRef<number>(performance.now());
 
   const current = useMemo(() => list[index] || null, [list, index]);
 
+  // initial 변경 시 현재 index 최대값 조정
   useEffect(() => {
     setList(initial);
     setIndex((i) =>
@@ -80,7 +81,6 @@ export function useInterviewQuestions(
       window.clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    inflightTokenRef.current = null;
     qStartRef.current = performance.now();
 
     if (!current) {
@@ -123,7 +123,7 @@ export function useInterviewQuestions(
         next: null,
         polished: null,
         keywords: null,
-        category: current.category ?? null
+        category: current.category ?? null,
       });
     } else {
       setAi(null);
@@ -131,32 +131,32 @@ export function useInterviewQuestions(
   }, [current]);
 
   /* ============================================================
-   * GPT V5 채점 호출
+   * GPT V5 채점 호출 (단일 호출 + 캐시)
    * ============================================================ */
-  const runGrade = useCallback(async (answer: string) => {
-      if (!sessionId || !current) return null;
+  const runGrade = useCallback(
+    async (answer: string, questionId: number): Promise<AiResult | null> => {
+      if (!sessionId) return null;
+
       const trimmed = answer.trim();
       if (trimmed.length < minChars) return null;
 
-      const key = `${sessionId}:${current.id}:${hashString(trimmed)}`;
-      if (cache.has(key)) return cache.get(key)!;
-
-      const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      inflightTokenRef.current = token;
+      const key = `${sessionId}:${questionId}:${hashString(trimmed)}`;
+      const cached = cache.get(key);
+      if (cached) return cached;
 
       try {
-        const res = await gradeAnswer(sessionId, current.id, trimmed);
-        if (!isMounted.current || inflightTokenRef.current !== token) return null;
+        const res = await gradeAnswer(sessionId, questionId, trimmed);
+        if (!isMounted.current) return null;
 
-        // 🔥 프론트 구조에 맞게 ai만 리턴
-        const ai: AiResult = res;
-
-        cache.set(key, ai);
-        return ai;
-      } catch {
-      return null;
-    }
-  }, [sessionId, current, minChars]);
+        cache.set(key, res);
+        return res;
+      } catch (e) {
+        console.error("[grade] error", e);
+        return null;
+      }
+    },
+    [sessionId, minChars]
+  );
 
   /* ============================================================
    * Answer 입력 핸들러 (디바운스)
@@ -166,30 +166,33 @@ export function useInterviewQuestions(
       setDraft(text);
       if (!sessionId || !current) return;
 
+      // 이전 타이머 정리
       if (timerRef.current) {
         window.clearTimeout(timerRef.current);
         timerRef.current = null;
       }
 
+      // 이 시점의 questionId를 캡처 (질문 전환 대비)
+      const qid = current.id;
+
       timerRef.current = window.setTimeout(async () => {
         if (!isMounted.current) return;
 
         setGrading(true);
-        const r = await runGrade(text);
+        const r = await runGrade(text, qid);
         if (!isMounted.current) return;
         setGrading(false);
 
         if (r) {
-          const ai: AiResult = r;
-          setAi(ai);
+          setAi(r);
 
           setList((prev) =>
             prev.map((q) =>
-              q.id === current.id
+              q.id === qid
                 ? {
                     ...q,
                     answer: text,
-                    score: ai.score
+                    score: r.score,
                   }
                 : q
             )
@@ -197,11 +200,13 @@ export function useInterviewQuestions(
 
           if (autosave) {
             try {
-              await saveAnswer(sessionId, current.id, {
+              await saveAnswer(sessionId, qid, {
                 answer: text,
-                score: ai.score
+                score: r.score,
               });
-            } catch {}
+            } catch (e) {
+              console.error("[saveAnswer] error", e);
+            }
           }
         }
       }, debounceMs) as unknown as number;
@@ -223,8 +228,9 @@ export function useInterviewQuestions(
       durationMs?: number | null;
     } = {
       answer: draft,
-      durationMs: spent
+      durationMs: spent,
     };
+
     if (ai) payload.score = ai.score;
 
     try {
@@ -232,11 +238,18 @@ export function useInterviewQuestions(
       setList((prev) =>
         prev.map((q) =>
           q.id === current.id
-            ? { ...q, durationMs: spent, answer: draft, score: ai?.score ?? q.score }
+            ? {
+                ...q,
+                durationMs: spent,
+                answer: draft,
+                score: ai?.score ?? q.score,
+              }
             : q
         )
       );
-    } catch {}
+    } catch (e) {
+      console.error("[commit] saveAnswer error", e);
+    }
   }, [sessionId, current, draft, ai]);
 
   const commitAndNext = useCallback(async () => {
@@ -252,10 +265,10 @@ export function useInterviewQuestions(
     setIndex((i) => Math.max(0, i - 1));
   }, []);
 
+  // 언마운트 시 타이머 정리
   useEffect(() => {
     return () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
-      inflightTokenRef.current = null;
     };
   }, []);
 
@@ -271,6 +284,6 @@ export function useInterviewQuestions(
     commit,
     commitAndNext,
     next,
-    prev
+    prev,
   };
 }
