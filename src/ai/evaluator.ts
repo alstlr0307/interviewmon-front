@@ -1,10 +1,21 @@
 // src/ai/evaluator.ts
-// 인터뷰 세션 문항에 대한 AI 채점 헬퍼 (캐시 + 디바운스)
+import http from "../api/http";
 
-import type { AiResult } from "../api/interview";
-import { gradeAnswerAPI } from "../api/interview";
+export type GradeLetter = "S" | "A" | "B" | "C" | "D" | "F";
 
-export type GradeLetter = AiResult["grade"];
+export interface AiResult {
+  score: number;
+  grade: GradeLetter;
+  summary: string;
+  tips: string[];
+  keywords: string[];
+  rewrite: string;
+}
+
+export interface GradeAPIResponse {
+  ok: boolean;
+  ai: AiResult;
+}
 
 export interface GradeOptions {
   signal?: AbortSignal;
@@ -21,13 +32,12 @@ function hashString(s: string) {
 
 const cache = new Map<string, AiResult>();
 
-// 한 번만 호출하는 버전 (캐시 + 최소 길이 체크)
 export async function gradeAnswerOnce(
   sessionId: number,
   sqid: number,
   answer: string,
   opts: GradeOptions = {}
-): Promise<AiResult> {
+) {
   const minChars = opts.minChars ?? 20;
   const trimmed = (answer || "").trim();
   if (!trimmed || trimmed.length < minChars) {
@@ -37,14 +47,24 @@ export async function gradeAnswerOnce(
   const key = `${sessionId}:${sqid}:${hashString(trimmed)}`;
   if (!opts.skipCache && cache.has(key)) return cache.get(key)!;
 
-  // 실제 API 호출은 interview 클라이언트 재사용
-  const ai = await gradeAnswerAPI(sessionId, sqid, trimmed);
+  const res = await http.post<GradeAPIResponse>(
+    `/api/sessions/${sessionId}/questions/${sqid}/grade`,
+    { answer: trimmed },
+    {
+      signal: opts.signal,
+      // 🔥 여기서도 60초까지 허용
+      timeout: 60000,
+    }
+  );
 
-  cache.set(key, ai);
-  return ai;
+  if (!res.data?.ok || !res.data?.ai) {
+    throw new Error("AI grade failed");
+  }
+
+  cache.set(key, res.data.ai);
+  return res.data.ai;
 }
 
-// 디바운스 래퍼 (필요한 화면에서만 사용)
 export function createDebouncedGrader(
   sessionId: number,
   sqid: number,
@@ -73,9 +93,7 @@ export function createDebouncedGrader(
       timer = setTimeout(async () => {
         timer = null;
         ctrl = new AbortController();
-        const signal = opts.signal
-          ? link(ctrl.signal, opts.signal)
-          : ctrl.signal;
+        const signal = opts.signal ? link(ctrl.signal, opts.signal) : ctrl.signal;
 
         try {
           const r = await gradeAnswerOnce(sessionId, sqid, answer, {
