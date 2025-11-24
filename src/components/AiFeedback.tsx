@@ -11,8 +11,11 @@ import {
 } from "recharts";
 
 /* =============================================================
- * Props
+ * Props (서버 스키마 100% 호환)
  * ============================================================= */
+type AIFeedbackItem = { text: string; level: number | null };
+type AIFollowItem = string | { question: string; reason?: string };
+
 type Props = {
   feedback: string;
   score?: number | null;
@@ -22,30 +25,20 @@ type Props = {
   summary_interviewer?: string | null;
   summary_coach?: string | null;
 
-  strengths?: string[] | null;
-  gaps?: string[] | null;
-  adds?: string[] | null;
-  pitfalls?: { text: string; level: number }[] | null;
-  next?: string[] | null;
+  strengths?: string[] | AIFeedbackItem[] | null;
+  gaps?: string[] | AIFeedbackItem[] | null;
+  adds?: string[] | AIFeedbackItem[] | null;
+  pitfalls?: AIFeedbackItem[] | null;
+  next?: string[] | AIFeedbackItem[] | null;
+
   polished?: string | null;
 
   keywords?: string[] | null;
   category?: string | null;
 
-  chart?: {
-    star_s: number;
-    star_t: number;
-    star_a: number;
-    star_r: number;
-    quant: number;
-    logic: number;
-    tech: number;
-    fit: number;
-    brevity: number;
-    risk: number;
-  } | null;
+  chart?: Record<string, number> | null;
 
-  follow_up_questions?: string[] | null;
+  follow_up_questions?: AIFollowItem[] | null;
 };
 
 /* =============================================================
@@ -145,7 +138,11 @@ export default function AiFeedback({
   const star = useMemo(() => analyzeSTAR(answer), [answer]);
   const spec = useMemo(() => analyzeSpecificity(answer), [answer]);
 
-  /* ---------------- 구조화 데이터 존재 여부 ---------------- */
+  const normalizeList = (arr?: any[] | null): string[] => {
+    if (!arr) return [];
+    return arr.map((v) => (typeof v === "string" ? v : v.text));
+  };
+
   const hasStructured =
     !!summary_interviewer ||
     !!summary_coach ||
@@ -158,30 +155,32 @@ export default function AiFeedback({
     (keywords && keywords.length > 0);
 
   /* ---------------- Radar data ---------------- */
-  const radarData = chart
-    ? Object.entries(chart).map(([key, val]) => ({
-        subject: {
-          star_s: "상황",
-          star_t: "과제",
-          star_a: "행동",
-          star_r: "결과",
-          quant: "정량성",
-          logic: "논리성",
-          tech: "기술성",
-          fit: "적합도",
-          brevity: "간결성",
-          risk: "위험관리",
-        }[key],
-        A: val,
-        fullMark: 100,
-      }))
-    : [
-        { subject: "상황", A: star.S ? 100 : 40, fullMark: 100 },
-        { subject: "과제", A: star.T ? 100 : 40, fullMark: 100 },
-        { subject: "행동", A: star.A ? 100 : 40, fullMark: 100 },
-        { subject: "결과", A: star.R ? 100 : 40, fullMark: 100 },
-        { subject: "특정성", A: spec.score, fullMark: 100 },
-      ];
+  const radarData =
+    chart && Object.keys(chart).length > 0
+      ? Object.entries(chart).map(([key, val]) => ({
+          subject:
+            {
+              star_s: "상황",
+              star_t: "과제",
+              star_a: "행동",
+              star_r: "결과",
+              quant: "정량성",
+              logic: "논리성",
+              tech: "기술성",
+              fit: "적합도",
+              brevity: "간결성",
+              risk: "위험관리",
+            }[key] || key,
+          A: val,
+          fullMark: 100,
+        }))
+      : [
+          { subject: "상황", A: star.S ? 100 : 40, fullMark: 100 },
+          { subject: "과제", A: star.T ? 100 : 40, fullMark: 100 },
+          { subject: "행동", A: star.A ? 100 : 40, fullMark: 100 },
+          { subject: "결과", A: star.R ? 100 : 40, fullMark: 100 },
+          { subject: "특정성", A: spec.score, fullMark: 100 },
+        ];
 
   return (
     <motion.div
@@ -190,9 +189,7 @@ export default function AiFeedback({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      {/* =============================================================
-       * Header
-       * ============================================================= */}
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
           <span className="text-xl">🤖</span>
@@ -208,9 +205,7 @@ export default function AiFeedback({
         )}
       </div>
 
-      {/* =============================================================
-       * Summary / Text Feedback
-       * ============================================================= */}
+      {/* Summary */}
       {hasStructured ? (
         <div className="bg-slate-800/60 border border-violet-700/30 rounded-lg p-4 space-y-3 shadow-inner">
           {summary_interviewer && (
@@ -228,26 +223,19 @@ export default function AiFeedback({
           )}
         </div>
       ) : feedback ? (
-        // 구조화된 필드가 없고, 문자열 feedback만 있을 때
         <div className="bg-slate-800/60 border border-violet-700/30 rounded-lg p-4 shadow-inner">
-          <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
-            {feedback}
-          </pre>
+          <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{feedback}</pre>
         </div>
       ) : null}
 
-      {/* =============================================================
-       * Gauge
-       * ============================================================= */}
+      {/* Gauge */}
       <div className="grid grid-cols-3 gap-4">
         <Gauge label="STAR 완성도" value={star.score} color="#a855f7" />
         <Gauge label="특정성" value={spec.score} color="#22d3ee" />
         <Gauge label="명확성" value={spec.clarity ? 100 : 50} color="#10b981" />
       </div>
 
-      {/* =============================================================
-       * Radar Chart
-       * ============================================================= */}
+      {/* Radar */}
       <div className="w-full h-72 bg-slate-900/50 border border-slate-700 rounded-xl p-2">
         <ResponsiveContainer width="100%" height="100%">
           <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
@@ -265,9 +253,7 @@ export default function AiFeedback({
         </ResponsiveContainer>
       </div>
 
-      {/* =============================================================
-       * Keywords
-       * ============================================================= */}
+      {/* Keywords */}
       {keywords && (
         <div className="bg-slate-800/60 border border-sky-700/20 rounded-lg p-4">
           <div className="font-semibold text-sky-300 mb-1">🔍 핵심 키워드</div>
@@ -275,44 +261,36 @@ export default function AiFeedback({
         </div>
       )}
 
-      {/* =============================================================
-       * Polished Answer
-       * ============================================================= */}
+      {/* Polished */}
       {polished && (
         <div className="bg-slate-900/60 border border-emerald-600/20 rounded-lg p-4 shadow-inner">
           <div className="font-semibold text-emerald-300 mb-2">📝 모범답변</div>
-          <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
-            {polished}
-          </pre>
+          <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{polished}</pre>
         </div>
       )}
 
-      {/* =============================================================
-       * Sections
-       * ============================================================= */}
+      {/* Sections */}
       <div className="space-y-4">
-        {strengths && <Section title="💪 Strengths" color="emerald" points={strengths} />}
-        {gaps && <Section title="🩹 개선 포인트" color="rose" points={gaps} />}
-        {adds && <Section title="➕ 추가 포인트" color="sky" points={adds} />}
+        {strengths && <Section title="💪 Strengths" color="emerald" points={normalizeList(strengths)} />}
+        {gaps && <Section title="🩹 개선 포인트" color="rose" points={normalizeList(gaps)} />}
+        {adds && <Section title="➕ 추가 포인트" color="sky" points={normalizeList(adds)} />}
         {pitfalls && (
           <Section
             title="⚠️ 위험 요소"
             color="rose"
-            points={pitfalls.map((p) => `레벨 ${p.level}: ${p.text}`)}
+            points={pitfalls.map((p) => `레벨 ${p.level ?? "?"}: ${p.text}`)}
           />
         )}
-        {next && <Section title="📈 다음 단계" color="emerald" points={next} />}
+        {next && <Section title="📈 다음 단계" color="emerald" points={normalizeList(next)} />}
       </div>
 
-      {/* =============================================================
-       * Follow-up Questions
-       * ============================================================= */}
+      {/* Follow-up */}
       {follow_up_questions && (
         <div className="bg-slate-800/60 border border-yellow-700/30 rounded-lg p-4 shadow-inner">
           <div className="font-semibold text-yellow-300 mb-2">🎯 예상 후속 질문</div>
           <ul className="list-disc list-inside text-sm text-gray-300 space-y-1">
             {follow_up_questions.map((q, i) => (
-              <li key={i}>{q}</li>
+              <li key={i}>{typeof q === "string" ? q : q.question}</li>
             ))}
           </ul>
         </div>
