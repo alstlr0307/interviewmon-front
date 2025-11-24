@@ -9,16 +9,14 @@ export type QuestionItem = {
   text: string;
   answer?: string | null;
   score?: number | null;
-  feedback?: string | null;
+  feedback?: string | null;      // DB 저장된 V5 전체 텍스트
+  category?: string | null;
   durationMs?: number | null;
 };
 
 export type UseInterviewQuestionsOptions = {
-  /** 자동 채점에 필요한 최소 글자수 (기본 40) */
   minChars?: number;
-  /** 입력 디바운스(ms) (기본 900) */
   debounceMs?: number;
-  /** 채점 이후 자동 저장할지 여부 (기본 true) */
   autosave?: boolean;
 };
 
@@ -29,10 +27,11 @@ function hashString(s: string) {
   return (h >>> 0).toString(36);
 }
 
-/** 동일 답변에 대한 중복 채점 방지용 캐시 */
 const cache = new Map<string, AiResult>();
 
-/* ---------- 메인 훅 ---------- */
+/* ============================================================
+ * 메인 훅
+ * ============================================================ */
 export function useInterviewQuestions(
   sessionId: number | null,
   initial: QuestionItem[],
@@ -48,7 +47,6 @@ export function useInterviewQuestions(
   const [ai, setAi] = useState<AiResult | null>(null);
   const [grading, setGrading] = useState(false);
 
-  /** 언마운트/전환 안전장치 */
   const isMounted = useRef(true);
   useEffect(() => {
     isMounted.current = true;
@@ -57,26 +55,26 @@ export function useInterviewQuestions(
     };
   }, []);
 
-  /** 세션 변경 시 캐시 초기화 (다른 세션 채점 섞임 방지) */
   useEffect(() => {
     cache.clear();
   }, [sessionId]);
 
-  /** 질문 전환 시 타이머/입장시각/레이스 토큰 관리 */
   const timerRef = useRef<number | null>(null);
   const inflightTokenRef = useRef<string | null>(null);
   const qStartRef = useRef<number>(performance.now());
 
-  /** 현재 질문 */
   const current = useMemo(() => list[index] || null, [list, index]);
 
-  /** external initial 동기화 */
   useEffect(() => {
     setList(initial);
-    setIndex((i) => Math.min(Math.max(0, i), Math.max(0, initial.length - 1)));
+    setIndex((i) =>
+      Math.min(Math.max(0, i), Math.max(0, initial.length - 1))
+    );
   }, [initial]);
 
-  /** 현재 질문 바뀌면 드래프트/AI뷰 동기화 & 타이머 정리 & 입장 시각 갱신 */
+  /* ============================================================
+   * 질문 전환 시: draft/AI 초기화 + 기존 DB feedback 복원
+   * ============================================================ */
   useEffect(() => {
     if (timerRef.current) {
       window.clearTimeout(timerRef.current);
@@ -94,22 +92,47 @@ export function useInterviewQuestions(
 
     setDraft(current.answer ?? "");
 
-    // 이미 채점된 이력(점수/피드백)이 있으면 최소 요약 메타만 구성 (실시간 패널은 새 grade가 오버라이드)
     if (current.score != null || current.feedback) {
       const sc = current.score ?? 0;
-      const grade: AiResult["grade"] =
-        sc >= 90 ? "S" : sc >= 80 ? "A" : sc >= 70 ? "B" : sc >= 60 ? "C" : sc >= 50 ? "D" : "F";
+
       setAi({
         score: sc,
-        grade,
+        grade:
+          sc >= 90
+            ? "S"
+            : sc >= 80
+            ? "A"
+            : sc >= 70
+            ? "B"
+            : sc >= 60
+            ? "C"
+            : sc >= 50
+            ? "D"
+            : "F",
+
+        // DB에는 feedbackText 전체가 들어가 있으므로 summary로 대체해 표시
         summary: current.feedback ?? "",
-      } as AiResult);
+
+        // 강화형 필드는 새 grade 호출 시 채워짐
+        summary_interviewer: null,
+        summary_coach: null,
+        strengths: null,
+        gaps: null,
+        adds: null,
+        pitfalls: null,
+        next: null,
+        polished: null,
+        keywords: null,
+        category: current.category ?? null
+      });
     } else {
       setAi(null);
     }
   }, [current]);
 
-  /** 내부: 채점 실행 */
+  /* ============================================================
+   * GPT V5 채점 호출
+   * ============================================================ */
   const runGrade = useCallback(
     async (answer: string) => {
       if (!sessionId || !current) return null;
@@ -119,13 +142,13 @@ export function useInterviewQuestions(
       const key = `${sessionId}:${current.id}:${hashString(trimmed)}`;
       if (cache.has(key)) return cache.get(key)!;
 
-      // 이 요청이 최신인지 판별할 토큰
       const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       inflightTokenRef.current = token;
 
       try {
         const res = await gradeAnswer(sessionId, current.id, trimmed);
         if (!isMounted.current || inflightTokenRef.current !== token) return null;
+
         cache.set(key, res);
         return res;
       } catch {
@@ -135,7 +158,9 @@ export function useInterviewQuestions(
     [sessionId, current, minChars]
   );
 
-  /** 입력 핸들러(디바운스 채점) */
+  /* ============================================================
+   * Answer 입력 핸들러 (디바운스)
+   * ============================================================ */
   const setAnswer = useCallback(
     (text: string) => {
       setDraft(text);
@@ -152,38 +177,40 @@ export function useInterviewQuestions(
         setGrading(true);
         const r = await runGrade(text);
         if (!isMounted.current) return;
+        setGrading(false);
 
         if (r) {
           setAi(r);
 
-          // 로컬 리스트의 현재 질문에 점수만 미리 반영 (★ feedback은 서버 '완본'을 덮지 않도록 로컬에도 넣지 않음)
           setList((prev) =>
             prev.map((q) =>
               q.id === current.id
-                ? { ...q, answer: text, score: r.score }
+                ? {
+                    ...q,
+                    answer: text,
+                    score: r.score
+                  }
                 : q
             )
           );
 
-          // 자동 저장(가능하면 서버에도 반영) - ★ feedback은 전송하지 않음
           if (autosave) {
             try {
               await saveAnswer(sessionId, current.id, {
                 answer: text,
-                score: r.score,
+                score: r.score
               });
-            } catch {
-              /* 네트워크 오류는 조용히 무시(다음 commit에서 다시 저장) */
-            }
+            } catch {}
           }
         }
-        setGrading(false);
       }, debounceMs) as unknown as number;
     },
     [sessionId, current, debounceMs, runGrade, autosave]
   );
 
-  /** 현재 질문 커밋(답변 + 최신 AI 결과 + durationMs 저장) */
+  /* ============================================================
+   * commit(): 문항 저장 + duration 기록
+   * ============================================================ */
   const commit = useCallback(async () => {
     if (!sessionId || !current) return;
 
@@ -195,13 +222,12 @@ export function useInterviewQuestions(
       durationMs?: number | null;
     } = {
       answer: draft,
-      durationMs: spent,
+      durationMs: spent
     };
     if (ai) payload.score = ai.score;
 
     try {
       await saveAnswer(sessionId, current.id, payload);
-      // 로컬 상태에도 duration 반영
       setList((prev) =>
         prev.map((q) =>
           q.id === current.id
@@ -209,18 +235,14 @@ export function useInterviewQuestions(
             : q
         )
       );
-    } catch {
-      /* 저장 실패는 상위에서 리트라이 버튼 등으로 처리 가능 */
-    }
+    } catch {}
   }, [sessionId, current, draft, ai]);
 
-  /** 커밋 후 다음 질문으로 이동(UX 편의) */
   const commitAndNext = useCallback(async () => {
     await commit();
     setIndex((i) => Math.min(list.length - 1, i + 1));
   }, [commit, list.length]);
 
-  /** 네비게이션 */
   const next = useCallback(() => {
     setIndex((i) => Math.min(list.length - 1, i + 1));
   }, [list.length]);
@@ -229,12 +251,9 @@ export function useInterviewQuestions(
     setIndex((i) => Math.max(0, i - 1));
   }, []);
 
-  /** 언마운트 시 타이머 클리어 */
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        window.clearTimeout(timerRef.current);
-      }
+      if (timerRef.current) window.clearTimeout(timerRef.current);
       inflightTokenRef.current = null;
     };
   }, []);
@@ -251,6 +270,6 @@ export function useInterviewQuestions(
     commit,
     commitAndNext,
     next,
-    prev,
+    prev
   };
 }
