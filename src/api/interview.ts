@@ -32,19 +32,16 @@ export type StartOptions = {
 export type AiResult = {
   score: number;
   grade: "S" | "A" | "B" | "C" | "D" | "F";
-
-  // 추가 !!!
+  
   summary?: string | null;
 
   summary_interviewer?: string | null;
   summary_coach?: string | null;
-
   strengths?: string[] | null;
   gaps?: string[] | null;
   adds?: string[] | null;
   pitfalls?: { text: string; level: number }[] | null;
   next?: string[] | null;
-
   tips?: string[] | null;
   keywords?: string[] | null;
   category?: string | null;
@@ -147,7 +144,6 @@ export async function gradeAnswerAPI(
   return {
     score,
     grade: ai.grade ?? gradeFromScore(score),
-
     // 🔥 summary는 interviewer 요약으로 통일
     summary: ai.summary_interviewer ?? ai.summary_coach ?? null,
 
