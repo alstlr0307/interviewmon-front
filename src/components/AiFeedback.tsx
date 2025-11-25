@@ -1,5 +1,4 @@
-// AiFeedback.tsx — Interviewmon UI v3.0
-// 실전 면접용 공격형 AI 피드백을 시각적으로 정확하게 표시하는 UI
+// AiFeedback.tsx — Interviewmon UI v3.1 (follow_up_questions 타입 충돌 완전 해결)
 
 import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -14,7 +13,7 @@ import {
 } from "recharts";
 
 /* =============================================================
- * Props
+ * 타입 정의
  * ============================================================= */
 type AIFeedbackItem = { text: string; level: number | null };
 type AIFollowItem = string | { question: string; reason?: string };
@@ -40,43 +39,57 @@ type Props = {
 
   chart?: Record<string, number | string> | null;
 
-  follow_up_questions?: AIFollowItem[] | null;
+  follow_up_questions?: AIFollowItem[] | string[] | null;   // ← 핵심 수정 포인트
 };
 
 /* =============================================================
- * Normalize
+ * Normalize 함수들
  * ============================================================= */
-const normalizeList = (arr?: any[] | null): string[] => {
-  if (!arr) return [];
-  return arr
-    .map((v) => {
-      if (typeof v === "string") return v;
-      if (v && typeof v.text === "string") return v.text;
-      return "";
+const normalizeList = (arr?: any[] | null): string[] =>
+  !arr
+    ? []
+    : arr
+        .map((v) => {
+          if (typeof v === "string") return v;
+          if (v && typeof v.text === "string") return v.text;
+          return "";
+        })
+        .filter(Boolean);
+
+const normalizePitfalls = (arr?: AIFeedbackItem[] | null): AIFeedbackItem[] =>
+  !arr
+    ? []
+    : (arr
+        .map((v) => {
+          if (!v) return null;
+          if (typeof v === "string") return { text: v, level: null };
+          const t = v.text ?? "";
+          return t ? { text: t, level: Number.isFinite(v.level) ? v.level : null } : null;
+        })
+        .filter(Boolean) as AIFeedbackItem[]);
+
+const normalizeFollowUps = (
+  list?: AIFollowItem[] | string[] | null
+): { question: string; reason?: string }[] => {
+  if (!list) return [];
+
+  return list
+    .map((x) => {
+      if (!x) return null;
+
+      // 케이스 1: string → 자동 변환
+      if (typeof x === "string") return { question: x };
+
+      // 케이스 2: {question, reason}
+      if (x && typeof x === "object" && "question" in x)
+        return { question: x.question, reason: x.reason };
+
+      return null;
     })
-    .filter(Boolean);
+    .filter(Boolean) as { question: string; reason?: string }[];
 };
 
-const normalizePitfalls = (
-  arr?: AIFeedbackItem[] | null
-): AIFeedbackItem[] => {
-  if (!arr) return [];
-  return arr
-    .map((v) => {
-      if (!v) return null;
-      if (typeof v === "string")
-        return { text: v, level: null };
-      const t = v.text ?? "";
-      return t
-        ? { text: t, level: Number.isFinite(v.level) ? v.level : null }
-        : null;
-    })
-    .filter(Boolean) as AIFeedbackItem[];
-};
-
-const normalizeChart = (
-  chart?: Record<string, number | string> | null
-) => {
+const normalizeChart = (chart?: Record<string, number | string> | null) => {
   if (!chart) return {};
   const out: Record<string, number> = {};
   Object.entries(chart).forEach(([k, v]) => {
@@ -87,20 +100,22 @@ const normalizeChart = (
 };
 
 /* =============================================================
- * STAR 분석 / Specificity 분석
+ * STAR / Specificity 분석
  * ============================================================= */
 function analyzeSTAR(a?: string | null) {
   const text = a || "";
-  const s = /상황|배경|환경/.test(text);
-  const t = /과제|문제|목표/.test(text);
-  const act = /행동|실행|시도|조치/.test(text);
-  const r = /결과|성과|지표|효과/.test(text);
   return {
-    S: s,
-    T: t,
-    A: act,
-    R: r,
-    score: [s, t, act, r].filter(Boolean).length * 25,
+    S: /상황|배경|환경/.test(text),
+    T: /과제|문제|목표/.test(text),
+    A: /행동|실행|시도|조치/.test(text),
+    R: /결과|성과|지표|효과/.test(text),
+    score:
+      [
+        /상황|배경|환경/.test(text),
+        /과제|문제|목표/.test(text),
+        /행동|실행|시도|조치/.test(text),
+        /결과|성과|지표|효과/.test(text),
+      ].filter(Boolean).length * 25,
   };
 }
 
@@ -113,15 +128,12 @@ function analyzeSpecificity(a?: string | null) {
     metrics,
     detail,
     clarity,
-    score: Math.min(
-      100,
-      metrics * 15 + (detail ? 25 : 0) + (clarity ? 20 : 0)
-    ),
+    score: Math.min(100, metrics * 15 + (detail ? 25 : 0) + (clarity ? 20 : 0)),
   };
 }
 
 /* =============================================================
- * Section 카드
+ * Section UI
  * ============================================================= */
 const CardSection = ({
   icon,
@@ -137,11 +149,7 @@ const CardSection = ({
   <motion.div
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
-    className={clsx(
-      "rounded-xl border p-6 space-y-3",
-      "backdrop-blur-xl shadow-lg",
-      color
-    )}
+    className={clsx("rounded-xl border p-6 space-y-3", "backdrop-blur-xl shadow-lg", color)}
   >
     <div className="flex items-center gap-2">
       <span className="text-xl">{icon}</span>
@@ -154,11 +162,8 @@ const CardSection = ({
 /* =============================================================
  * Follow-up Accordion
  * ============================================================= */
-const Accordion = ({ q }: { q: AIFollowItem }) => {
+const Accordion = ({ q }: { q: { question: string; reason?: string } }) => {
   const [open, setOpen] = useState(false);
-
-  const question = typeof q === "string" ? q : q.question;
-  const reason = typeof q === "string" ? "" : q.reason;
 
   return (
     <div>
@@ -166,19 +171,19 @@ const Accordion = ({ q }: { q: AIFollowItem }) => {
         onClick={() => setOpen(!open)}
         className="w-full flex justify-between items-center py-2 text-left text-gray-200 hover:text-white"
       >
-        <span>• {question}</span>
+        <span>• {q.question}</span>
         <span>{open ? "▲" : "▼"}</span>
       </button>
 
       <AnimatePresence>
-        {open && reason && (
+        {open && q.reason && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className="pl-4 text-sm text-gray-400"
           >
-            {reason}
+            {q.reason}
           </motion.div>
         )}
       </AnimatePresence>
@@ -189,33 +194,37 @@ const Accordion = ({ q }: { q: AIFollowItem }) => {
 /* =============================================================
  * Main Component
  * ============================================================= */
-export default function AiFeedback({
-  score,
-  feedback,
-  answer,
-  summary_interviewer,
-  summary_coach,
-  strengths,
-  gaps,
-  adds,
-  pitfalls,
-  next,
-  polished,
-  keywords,
-  chart,
-  follow_up_questions,
-}: Props) {
+export default function AiFeedback(props: Props) {
+  const {
+    score,
+    feedback,
+    answer,
+    summary_coach,
+    summary_interviewer,
+    strengths,
+    gaps,
+    adds,
+    pitfalls,
+    next,
+    polished,
+    keywords,
+    chart,
+    follow_up_questions,
+  } = props;
+
   const star = useMemo(() => analyzeSTAR(answer), [answer]);
   const spec = useMemo(() => analyzeSpecificity(answer), [answer]);
 
-  const pit = normalizePitfalls(pitfalls);
   const str = normalizeList(strengths);
   const gap = normalizeList(gaps);
   const add = normalizeList(adds);
+  const pit = normalizePitfalls(pitfalls);
   const nxt = normalizeList(next);
 
   const kw = keywords ?? [];
   const safeChart = normalizeChart(chart);
+
+  const fuq = normalizeFollowUps(follow_up_questions); // ← 핵심
 
   const radarData =
     Object.keys(safeChart).length > 0
@@ -260,50 +269,25 @@ export default function AiFeedback({
 
       {/* Summary */}
       {(summary_interviewer || summary_coach) && (
-        <CardSection
-          icon="📌"
-          title="핵심 요약"
-          color="border-violet-500/40 bg-violet-800/10"
-        >
+        <CardSection icon="📌" title="핵심 요약" color="border-violet-500/40 bg-violet-800/10">
           {summary_interviewer && (
-            <p className="text-gray-300 leading-relaxed whitespace-pre-line">
-              {summary_interviewer}
-            </p>
+            <p className="text-gray-300 whitespace-pre-line leading-relaxed">{summary_interviewer}</p>
           )}
           {summary_coach && (
-            <p className="text-gray-300 leading-relaxed whitespace-pre-line">
-              {summary_coach}
-            </p>
+            <p className="text-gray-300 whitespace-pre-line leading-relaxed">{summary_coach}</p>
           )}
         </CardSection>
       )}
 
       {/* Radar */}
-      <CardSection
-        icon="📊"
-        title="구조 분석"
-        color="border-slate-700 bg-slate-900/40"
-      >
-        <div className="w-full h-80 rounded-xl p-2">
+      <CardSection icon="📊" title="구조 분석" color="border-slate-700 bg-slate-900/40">
+        <div className="w-full h-80 p-2">
           <ResponsiveContainer width="100%" height="100%">
-            <RadarChart
-              cx="50%"
-              cy="50%"
-              outerRadius="80%"
-              data={radarData}
-            >
+            <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
               <PolarGrid stroke="#3f3f46" />
-              <PolarAngleAxis
-                dataKey="subject"
-                tick={{ fill: "#c7d2fe", fontSize: 12 }}
-              />
+              <PolarAngleAxis dataKey="subject" tick={{ fill: "#c7d2fe", fontSize: 12 }} />
               <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} />
-              <Radar
-                dataKey="A"
-                stroke="#8b5cf6"
-                fill="#8b5cf6"
-                fillOpacity={0.45}
-              />
+              <Radar dataKey="A" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.45} />
             </RadarChart>
           </ResponsiveContainer>
         </div>
@@ -311,24 +295,14 @@ export default function AiFeedback({
 
       {/* Keywords */}
       {kw.length > 0 && (
-        <CardSection
-          icon="🔍"
-          title="핵심 키워드"
-          color="border-sky-500/40 bg-sky-800/10"
-        >
-          <p className="text-gray-300 text-sm leading-relaxed">
-            {kw.join(", ")}
-          </p>
+        <CardSection icon="🔍" title="핵심 키워드" color="border-sky-500/40 bg-sky-800/10">
+          <p className="text-gray-300 text-sm leading-relaxed">{kw.join(", ")}</p>
         </CardSection>
       )}
 
-      {/* Polished */}
+      {/* Polished Answer */}
       {polished && polished.trim().length > 0 && (
-        <CardSection
-          icon="📝"
-          title="모범 답변"
-          color="border-emerald-500/40 bg-emerald-800/10"
-        >
+        <CardSection icon="📝" title="모범 답변" color="border-emerald-500/40 bg-emerald-800/10">
           <pre className="text-gray-200 text-[15px] whitespace-pre-wrap leading-relaxed">
             {polished}
           </pre>
@@ -337,11 +311,7 @@ export default function AiFeedback({
 
       {/* Strengths */}
       {str.length > 0 && (
-        <CardSection
-          icon="💪"
-          title="강점"
-          color="border-emerald-500/40 bg-emerald-700/10"
-        >
+        <CardSection icon="💪" title="강점" color="border-emerald-500/40 bg-emerald-700/10">
           <ul className="space-y-2 text-gray-300">
             {str.map((s, i) => (
               <li key={i}>• {s}</li>
@@ -352,11 +322,7 @@ export default function AiFeedback({
 
       {/* Gaps */}
       {gap.length > 0 && (
-        <CardSection
-          icon="🩹"
-          title="개선 포인트"
-          color="border-rose-500/40 bg-rose-700/10"
-        >
+        <CardSection icon="🩹" title="개선 포인트" color="border-rose-500/40 bg-rose-700/10">
           <ul className="space-y-2 text-gray-300">
             {gap.map((s, i) => (
               <li key={i}>• {s}</li>
@@ -367,16 +333,10 @@ export default function AiFeedback({
 
       {/* Pitfalls */}
       {pit.length > 0 && (
-        <CardSection
-          icon="⚠️"
-          title="위험 요소"
-          color="border-orange-500/40 bg-orange-700/10"
-        >
+        <CardSection icon="⚠️" title="위험 요소" color="border-orange-500/40 bg-orange-700/10">
           <ul className="space-y-2 text-gray-300">
             {pit.map((p, i) => (
-              <li key={i}>
-                • 레벨 {p.level ?? "?"}: {p.text}
-              </li>
+              <li key={i}>• 레벨 {p.level ?? "?"}: {p.text}</li>
             ))}
           </ul>
         </CardSection>
@@ -384,11 +344,7 @@ export default function AiFeedback({
 
       {/* Next Steps */}
       {nxt.length > 0 && (
-        <CardSection
-          icon="📈"
-          title="다음 단계"
-          color="border-indigo-500/40 bg-indigo-700/10"
-        >
+        <CardSection icon="📈" title="다음 단계" color="border-indigo-500/40 bg-indigo-700/10">
           <ul className="space-y-2 text-gray-300">
             {nxt.map((s, i) => (
               <li key={i}>• {s}</li>
@@ -397,50 +353,16 @@ export default function AiFeedback({
         </CardSection>
       )}
 
-      {/* Follow-up */}
-      {follow_up_questions && follow_up_questions.length > 0 && (
-        <CardSection
-          icon="🎯"
-          title="예상 후속 질문"
-          color="border-yellow-500/40 bg-yellow-700/10"
-        >
+      {/* Follow-up Questions */}
+      {fuq.length > 0 && (
+        <CardSection icon="🎯" title="예상 후속 질문" color="border-yellow-500/40 bg-yellow-700/10">
           <div className="space-y-2">
-            {follow_up_questions.map((q, i) => (
+            {fuq.map((q, i) => (
               <Accordion key={i} q={q} />
             ))}
           </div>
         </CardSection>
       )}
     </motion.div>
-  );
-}
-
-/* =============================================================
- * Gauge
- * ============================================================= */
-function Gauge({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1 w-full">
-      <div className="text-xs text-gray-300">{label}</div>
-      <div className="h-2 bg-slate-800 rounded-full overflow-hidden shadow-inner">
-        <motion.div
-          className="h-2 rounded-full"
-          initial={{ width: 0 }}
-          animate={{ width: `${value}%` }}
-          transition={{ duration: 0.8 }}
-          style={{
-            background: `linear-gradient(90deg, ${color}, #4ade80)`,
-          }}
-        />
-      </div>
-    </div>
   );
 }

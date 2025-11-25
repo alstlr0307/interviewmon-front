@@ -9,7 +9,7 @@ import { useAuth } from "../api/mockAuth";
 import AiFeedback from "../components/AiFeedback";
 
 // -------------------------
-// 🔥 QSItem 타입 확장 (빨간줄 제거)
+// 🔥 QSItem 타입 확장 (타입 충돌 해결)
 // -------------------------
 type QSItem = {
   id: number;
@@ -32,13 +32,18 @@ type QSItem = {
 
   pitfalls?: { text: string; level: number | null }[] | null;
 
-  next?: string[] | null;   // ← next_steps → next 로 통일
+  next?: string[] | null;
   polished?: string | null;
 
   keywords?: string[] | null;
   chart?: Record<string, number> | null;
 
-  follow_up_questions?: string[] | null;  // follow_up → follow_up_questions로 통일
+  // ⬇⬇⬇ 여기가 주요 변경 부분
+  follow_up_questions?: (
+    | string
+    | { question: string; reason?: string }
+  )[] | null;
+  // ⬆⬆⬆ AiFeedback 및 서버 ai.js 결과와 100% 일치
 };
 
 type Summary = {
@@ -46,7 +51,11 @@ type Summary = {
   answered: number;
   avgScore: number | null;
   durationMs: number;
-  byCategory?: Array<{ category: string | null; count: number; avgScore: number | null }>;
+  byCategory?: Array<{
+    category: string | null;
+    count: number;
+    avgScore: number | null;
+  }>;
 };
 
 type LocationState = { sessionId: number; company?: string | null } | null;
@@ -78,7 +87,9 @@ function useQuery() {
 }
 
 function downloadJSON(fileName: string, data: unknown) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(data, null, 2)], {
+    type: "application/json",
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -99,7 +110,9 @@ export default function Result() {
   const querySid = q.get("sid") ? Number(q.get("sid")) : null;
   const sessionId = stateSid || querySid;
 
-  const [company, setCompany] = useState<string | null>(state?.company ?? null);
+  const [company, setCompany] = useState<string | null>(
+    state?.company ?? null
+  );
   const [summary, setSummary] = useState<Summary | null>(null);
   const [items, setItems] = useState<QSItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,6 +133,7 @@ export default function Result() {
   useEffect(() => {
     if (!sessionId) return;
     let alive = true;
+
     (async () => {
       setLoading(true);
       try {
@@ -142,12 +156,13 @@ export default function Result() {
         if (alive) setLoading(false);
       }
     })();
+
     return () => {
       alive = false;
     };
   }, [sessionId]);
 
-  // Radar/Weak Topics 계산
+  // Radar/WeakTopics 계산
   const {
     radar,
     weakTopics,
@@ -169,17 +184,20 @@ export default function Result() {
 
       if (it.score != null) {
         sum += Number(it.score);
-        cnt += 1;
+        cnt++;
         node.s += it.score;
-        node.c += 1;
+        node.c++;
       }
-      if (!it.answer && (it.durationMs ?? 0) > 0) timeouts += 1;
+
+      if (!it.answer && (it.durationMs ?? 0) > 0) timeouts++;
     });
 
-    const radar: RadarDatum[] = Array.from(byCat.entries()).map(([k, v]) => ({
-      label: TOPIC_LABEL[k] || k,
-      value: Math.round(v.s / Math.max(1, v.c)),
-    }));
+    const radar: RadarDatum[] = Array.from(byCat.entries()).map(
+      ([k, v]) => ({
+        label: TOPIC_LABEL[k] || k,
+        value: Math.round(v.s / Math.max(1, v.c)),
+      })
+    );
 
     const weakTopics = Array.from(byCat.entries())
       .map(([k, v]) => ({ k, a: v.s / Math.max(1, v.c) }))
@@ -217,7 +235,9 @@ export default function Result() {
         ...(JSON.parse(localStorage.getItem("im-last-options") || "{}")),
       };
     } catch {}
+
     const opts = { ...last, count: 10 };
+
     nav(`/interview/${(company || "custom").toLowerCase()}`, {
       state: { options: opts, topicFilters: weakTopics },
     });
@@ -232,6 +252,7 @@ export default function Result() {
       alert("내용이 없는 답변은 저장할 수 없습니다.");
       return;
     }
+
     const topic = (it.category || "general").toString();
     const topicLabel = TOPIC_LABEL[topic] || topic;
 
@@ -248,6 +269,7 @@ export default function Result() {
       aiScore: it.score ?? null,
       aiFeedback: it.feedback ?? null,
     });
+
     alert("스토리뱅크에 저장했습니다.");
   }
 
@@ -291,12 +313,14 @@ export default function Result() {
             <div className="small" style={{ color: "#9aa3b2" }}>
               총점
             </div>
+
             <div style={{ fontSize: 40, fontWeight: 800 }}>
               {sumScore}{" "}
               <span className="small" style={{ color: "#9aa3b2" }}>
                 / {totalPossible}
               </span>
             </div>
+
             <div className="small" style={{ color: "#9aa3b2" }}>
               채점 문항 {summary?.answered ?? 0}개 기준 · 평균 {avgScore}점 ·
               소요 {durSec}s
@@ -305,15 +329,13 @@ export default function Result() {
 
           <div className="card" style={{ padding: 16 }}>
             <b>약한 영역 추천</b>
-            <div
-              className="small"
-              style={{ color: "#9aa3b2", marginTop: 6 }}
-            >
+            <div className="small" style={{ color: "#9aa3b2", marginTop: 6 }}>
               최근 세션 분석 결과 약한 영역:{" "}
               {weakTopics.length
                 ? weakTopics.map((t) => TOPIC_LABEL[t] || t).join(", ")
                 : "분석할 데이터가 부족합니다."}
             </div>
+
             <div
               className="hstack"
               style={{ justifyContent: "flex-end", marginTop: 10 }}
@@ -330,12 +352,10 @@ export default function Result() {
         </div>
 
         <div className="vstack" style={{ alignItems: "center" }}>
-          <div
-            className="small"
-            style={{ color: "#9aa3b2", marginBottom: 8 }}
-          >
+          <div className="small" style={{ color: "#9aa3b2", marginBottom: 8 }}>
             카테고리별 평균 점수
           </div>
+
           {radar.length > 0 ? (
             <Radar data={radar} size={300} />
           ) : (
@@ -360,6 +380,7 @@ export default function Result() {
           <div className="small" style={{ color: "#9ca3af" }}>
             AI 점수/피드백은 실시간 채점 결과를 표시합니다.
           </div>
+
           <button className="btn" onClick={() => setExpandAll((v) => !v)}>
             {expandAll ? "모두 접기" : "모두 펼치기"}
           </button>
@@ -377,6 +398,7 @@ export default function Result() {
                 : `점수 ${score}점`;
 
               const canSave = !!it.answer && it.answer.trim().length > 0;
+
               const catLabel =
                 TOPIC_LABEL[it.category || "general"] ||
                 (it.category || "기타");
@@ -398,6 +420,7 @@ export default function Result() {
                       <div className="badge">Q{i + 1}</div>
                       <b>{title}</b>
                       <span className="badge">{catLabel}</span>
+
                       {it.durationMs != null && (
                         <span className="badge">
                           {Math.round(it.durationMs / 1000)}s
@@ -491,6 +514,7 @@ export default function Result() {
           <Link to="/companies" className="btn">
             다른 기업으로
           </Link>
+
           <button className="btn brand" onClick={exportJSON}>
             JSON 내보내기
           </button>
