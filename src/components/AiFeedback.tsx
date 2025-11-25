@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { motion } from "framer-motion";
+import React, { useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import {
   Radar,
@@ -41,7 +41,7 @@ type Props = {
 };
 
 /* =============================================================
- * 유틸리티 — 어떤 타입이 와도 배열/문자열 기준으로 정규화
+ * Normalize util
  * ============================================================= */
 const normalizeList = (arr?: any[] | null): string[] => {
   if (!arr) return [];
@@ -102,63 +102,75 @@ function analyzeSpecificity(a?: string | null) {
 }
 
 /* =============================================================
- * Gauge
+ * Section 카드 (더 고급스럽게)
  * ============================================================= */
-function Gauge({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div className="flex flex-col gap-1 w-full">
-      <div className="text-xs text-gray-400">{label}</div>
-      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-        <motion.div
-          className="h-1.5 rounded-full"
-          initial={{ width: 0 }}
-          animate={{ width: `${value}%` }}
-          transition={{ duration: 0.8 }}
-          style={{ background: `linear-gradient(90deg, ${color}, #22d3ee)` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* =============================================================
- * Section
- * ============================================================= */
-const Section = ({
+const CardSection = ({
+  icon,
   title,
   color,
-  points,
+  children,
 }: {
+  icon: string;
   title: string;
-  color: "emerald" | "rose" | "sky";
-  points: string[];
+  color: string;
+  children: React.ReactNode;
 }) => {
-  const bgMap = {
-    emerald: "bg-gradient-to-br from-emerald-400/20 to-emerald-600/10 border-emerald-500/30",
-    rose: "bg-gradient-to-br from-rose-400/20 to-rose-600/10 border-rose-500/30",
-    sky: "bg-gradient-to-br from-sky-400/20 to-sky-600/10 border-sky-500/30",
-  };
-
-  if (!points || points.length === 0) return null;
-
   return (
     <motion.div
-      className={clsx("rounded-lg p-4 border", bgMap[color])}
-      initial={{ opacity: 0, y: 6 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
+      className={clsx(
+        "rounded-xl border p-6 space-y-3",
+        "backdrop-blur-xl shadow-lg",
+        color
+      )}
     >
-      <div className="font-semibold text-gray-200 mb-1">{title}</div>
-      <ul className="list-disc list-inside text-sm text-gray-300 space-y-1">
-        {points.map((p, i) => (
-          <li key={i}>{p}</li>
-        ))}
-      </ul>
+      <div className="flex items-center gap-2">
+        <span className="text-xl">{icon}</span>
+        <h3 className="text-lg font-semibold text-white">{title}</h3>
+      </div>
+      {children}
     </motion.div>
   );
 };
 
 /* =============================================================
- * Main Component
+ * Follow-up 아코디언
+ * ============================================================= */
+const Accordion = ({ q }: { q: AIFollowItem }) => {
+  const [open, setOpen] = useState(false);
+
+  const question = typeof q === "string" ? q : q.question;
+  const reason = typeof q === "string" ? "" : q.reason;
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex justify-between items-center py-2 text-left text-gray-200 hover:text-white"
+      >
+        <span>• {question}</span>
+        <span>{open ? "▲" : "▼"}</span>
+      </button>
+
+      <AnimatePresence>
+        {open && reason && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="pl-4 text-sm text-gray-400"
+          >
+            {reason}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+/* =============================================================
+ * 메인 컴포넌트
  * ============================================================= */
 export default function AiFeedback({
   feedback,
@@ -184,22 +196,10 @@ export default function AiFeedback({
   const gap = normalizeList(gaps);
   const add = normalizeList(adds);
   const nxt = normalizeList(next);
-  const kw = keywords ?? [];
 
+  const kw = keywords ?? [];
   const safeChart = normalizeChart(chart);
 
-  const hasStructured =
-    !!summary_interviewer ||
-    !!summary_coach ||
-    str.length > 0 ||
-    gap.length > 0 ||
-    add.length > 0 ||
-    pit.length > 0 ||
-    nxt.length > 0 ||
-    !!polished ||
-    kw.length > 0;
-
-  /* ---------------- Radar data ---------------- */
   const radarData =
     Object.keys(safeChart).length > 0
       ? Object.entries(safeChart).map(([key, val]) => ({
@@ -229,119 +229,199 @@ export default function AiFeedback({
 
   return (
     <motion.div
-      className="rounded-2xl border border-violet-600/40 bg-gradient-to-b from-slate-900/90 to-slate-950/90 p-6 space-y-8 shadow-[0_0_30px_rgba(139,92,246,0.25)]"
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
+      className="rounded-2xl border border-violet-600/40 bg-gradient-to-b from-[#0c0c20] to-[#0c0f29] p-8 space-y-10 shadow-[0_0_50px_rgba(139,92,246,0.25)]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
     >
-      {/* Header */}
+      {/* HEADER */}
       <div className="flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">🤖</span>
-          <span className="text-lg font-semibold bg-gradient-to-r from-violet-400 to-sky-400 bg-clip-text text-transparent">
-            AI 피드백 코치
-          </span>
-        </div>
+        <h2 className="text-2xl font-bold bg-gradient-to-r from-violet-300 to-sky-300 bg-clip-text text-transparent">
+          🤖 AI 피드백 분석
+        </h2>
 
         {score != null && (
-          <div className="px-3 py-1.5 rounded-full bg-violet-600/30 text-violet-200 text-sm font-medium">
+          <div className="px-4 py-2 rounded-full bg-violet-600/30 text-violet-200 text-sm font-medium border border-violet-500/40 shadow">
             총점 {score}
           </div>
         )}
       </div>
 
-      {/* Summary OR fallback feedback */}
-      {hasStructured ? (
-        <div className="bg-slate-800/60 border border-violet-700/30 rounded-lg p-4 space-y-3 shadow-inner">
+      {/* SUMMARY */}
+      {(summary_interviewer || summary_coach) && (
+        <CardSection
+          icon="📌"
+          title="면접 핵심 요약"
+          color="border-violet-500/40 bg-violet-800/10"
+        >
           {summary_interviewer && (
-            <div>
-              <div className="font-semibold text-violet-300 mb-1">📌 면접관 요약</div>
-              <p className="text-sm text-gray-300 leading-relaxed">{summary_interviewer}</p>
-            </div>
+            <p className="text-gray-300 leading-relaxed whitespace-pre-line">
+              {summary_interviewer}
+            </p>
           )}
-
           {summary_coach && (
-            <div>
-              <div className="font-semibold text-sky-300 mb-1">📘 코치 요약</div>
-              <p className="text-sm text-gray-300 leading-relaxed">{summary_coach}</p>
-            </div>
+            <p className="text-gray-300 leading-relaxed whitespace-pre-line">
+              {summary_coach}
+            </p>
           )}
-        </div>
-      ) : feedback ? (
-        <div className="bg-slate-800/60 border border-violet-700/30 rounded-lg p-4 shadow-inner">
-          <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{feedback}</pre>
-        </div>
-      ) : null}
+        </CardSection>
+      )}
 
-      {/* Gauge */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* GAUGES */}
+      <div className="grid grid-cols-3 gap-6">
         <Gauge label="STAR 완성도" value={star.score} color="#a855f7" />
         <Gauge label="특정성" value={spec.score} color="#22d3ee" />
         <Gauge label="명확성" value={spec.clarity ? 100 : 50} color="#10b981" />
       </div>
 
-      {/* Radar */}
-      <div className="w-full h-72 bg-slate-900/50 border border-slate-700 rounded-xl p-2">
-        <ResponsiveContainer width="100%" height="100%">
-          <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
-            <PolarGrid stroke="#3f3f46" />
-            <PolarAngleAxis dataKey="subject" tick={{ fill: "#a5b4fc", fontSize: 12 }} />
-            <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} />
-            <Radar dataKey="A" stroke="#8b5cf6" fill="url(#colorAI)" fillOpacity={0.6} />
-            <defs>
-              <linearGradient id="colorAI" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#a78bfa" />
-                <stop offset="100%" stopColor="#22d3ee" />
-              </linearGradient>
-            </defs>
-          </RadarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Keywords */}
-      {kw.length > 0 && (
-        <div className="bg-slate-800/60 border border-sky-700/20 rounded-lg p-4">
-          <div className="font-semibold text-sky-300 mb-1">🔍 핵심 키워드</div>
-          <p className="text-sm text-gray-300 leading-relaxed">{kw.join(", ")}</p>
+      {/* RADAR */}
+      <CardSection
+        icon="📊"
+        title="답변 구조 분석"
+        color="border-slate-700 bg-slate-900/40"
+      >
+        <div className="w-full h-80 rounded-xl p-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
+              <PolarGrid stroke="#3f3f46" />
+              <PolarAngleAxis dataKey="subject" tick={{ fill: "#c7d2fe", fontSize: 12 }} />
+              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} />
+              <Radar dataKey="A" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.4} />
+            </RadarChart>
+          </ResponsiveContainer>
         </div>
+      </CardSection>
+
+      {/* KEYWORDS */}
+      {kw.length > 0 && (
+        <CardSection
+          icon="🔍"
+          title="핵심 키워드"
+          color="border-sky-500/40 bg-sky-800/10"
+        >
+          <p className="text-gray-300 text-sm leading-relaxed">{kw.join(", ")}</p>
+        </CardSection>
       )}
 
-      {/* Polished */}
+      {/* POLISHED */}
       {polished && polished.trim().length > 0 && (
-        <div className="bg-slate-900/60 border border-emerald-600/20 rounded-lg p-4 shadow-inner">
-          <div className="font-semibold text-emerald-300 mb-2">📝 모범답변</div>
-          <pre className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
+        <CardSection
+          icon="📝"
+          title="모범답변 (면접에서 그대로 말해도 됨)"
+          color="border-emerald-500/40 bg-emerald-800/10"
+        >
+          <pre className="text-gray-200 text-[15px] whitespace-pre-wrap leading-relaxed">
             {polished}
           </pre>
-        </div>
+        </CardSection>
       )}
 
-      {/* Strengths / Gaps / Adds / Pitfalls / Next */}
-      <div className="space-y-4">
-        {str.length > 0 && <Section title="💪 Strengths" color="emerald" points={str} />}
-        {gap.length > 0 && <Section title="🩹 개선 포인트" color="rose" points={gap} />}
-        {add.length > 0 && <Section title="➕ 추가 포인트" color="sky" points={add} />}
-        {pit.length > 0 && (
-          <Section
-            title="⚠️ 위험 요소"
-            color="rose"
-            points={pit.map((p) => `레벨 ${p.level ?? "?"}: ${p.text}`)}
-          />
-        )}
-        {nxt.length > 0 && <Section title="📈 다음 단계" color="emerald" points={nxt} />}
-      </div>
-
-      {/* Follow-up */}
-      {follow_up_questions && follow_up_questions.length > 0 && (
-        <div className="bg-slate-800/60 border border-yellow-700/30 rounded-lg p-4 shadow-inner">
-          <div className="font-semibold text-yellow-300 mb-2">🎯 예상 후속 질문</div>
-          <ul className="list-disc list-inside text-sm text-gray-300 space-y-1">
-            {follow_up_questions.map((q, i) => (
-              <li key={i}>{typeof q === "string" ? q : q.question}</li>
+      {/* STRENGTHS / GAPS / ADDS / PITFALLS / NEXT */}
+      {str.length > 0 && (
+        <CardSection
+          icon="💪"
+          title="강점 (Strengths)"
+          color="border-emerald-500/40 bg-emerald-700/10"
+        >
+          <ul className="space-y-2 text-gray-300">
+            {str.map((s, i) => (
+              <li key={i}>• {s}</li>
             ))}
           </ul>
-        </div>
+        </CardSection>
+      )}
+
+      {gap.length > 0 && (
+        <CardSection
+          icon="🩹"
+          title="개선 포인트 (Gaps)"
+          color="border-rose-500/40 bg-rose-700/10"
+        >
+          <ul className="space-y-2 text-gray-300">
+            {gap.map((s, i) => (
+              <li key={i}>• {s}</li>
+            ))}
+          </ul>
+        </CardSection>
+      )}
+
+      {add.length > 0 && (
+        <CardSection
+          icon="➕"
+          title="추가하면 더 좋은 내용 (Adds)"
+          color="border-sky-500/40 bg-sky-700/10"
+        >
+          <ul className="space-y-2 text-gray-300">
+            {add.map((s, i) => (
+              <li key={i}>• {s}</li>
+            ))}
+          </ul>
+        </CardSection>
+      )}
+
+      {pit.length > 0 && (
+        <CardSection
+          icon="⚠️"
+          title="주의해야 할 위험 요소 (Pitfalls)"
+          color="border-orange-500/40 bg-orange-700/10"
+        >
+          <ul className="space-y-2 text-gray-300">
+            {pit.map((p, i) => (
+              <li key={i}>
+                • 레벨 {p.level ?? "?"}: {p.text}
+              </li>
+            ))}
+          </ul>
+        </CardSection>
+      )}
+
+      {nxt.length > 0 && (
+        <CardSection
+          icon="📈"
+          title="다음 단계 (Next Steps)"
+          color="border-indigo-500/40 bg-indigo-700/10"
+        >
+          <ul className="space-y-2 text-gray-300">
+            {nxt.map((s, i) => (
+              <li key={i}>• {s}</li>
+            ))}
+          </ul>
+        </CardSection>
+      )}
+
+      {/* FOLLOW UP (Accordion) */}
+      {follow_up_questions && follow_up_questions.length > 0 && (
+        <CardSection
+          icon="🎯"
+          title="예상 후속 질문"
+          color="border-yellow-500/40 bg-yellow-700/10"
+        >
+          <div className="space-y-2">
+            {follow_up_questions.map((q, i) => (
+              <Accordion key={i} q={q} />
+            ))}
+          </div>
+        </CardSection>
       )}
     </motion.div>
+  );
+}
+
+/* =============================================================
+ * Gauge Component (bottom)
+ * ============================================================= */
+function Gauge({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="flex flex-col gap-1 w-full">
+      <div className="text-xs text-gray-300">{label}</div>
+      <div className="h-2 bg-slate-800 rounded-full overflow-hidden shadow-inner">
+        <motion.div
+          className="h-2 rounded-full"
+          initial={{ width: 0 }}
+          animate={{ width: `${value}%` }}
+          transition={{ duration: 0.8 }}
+          style={{ background: `linear-gradient(90deg, ${color}, #4ade80)` }}
+        />
+      </div>
+    </div>
   );
 }
