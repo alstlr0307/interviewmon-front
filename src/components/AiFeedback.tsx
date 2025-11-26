@@ -1,5 +1,5 @@
 // src/components/AiFeedback.tsx
-// Interviewmon — 공격형 면접 피드백 UI 최신 버전 (v3.1)
+// Interviewmon — 공격형 면접 피드백 UI 최신 버전 (v3.1, safe text-wrap)
 
 import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -98,15 +98,13 @@ const normalizeFollowUps = (arr?: FollowUpItem[] | null) => {
   });
 };
 
-const normalizeChart = (
-  chart?: Record<string, number | string> | null
-) => {
+const normalizeChart = (chart?: Record<string, number | string> | null) => {
   if (!chart) return {};
 
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(chart)) {
     const num = typeof v === "string" ? Number(v) : v;
-    out[k] = Number.isFinite(num) ? num : 0;
+    out[k] = Number.isFinite(num) ? (num as number) : 0;
   }
   return out;
 };
@@ -165,6 +163,7 @@ const CardSection = ({
     className={clsx(
       "rounded-xl border p-6 space-y-3",
       "backdrop-blur-xl shadow-lg",
+      "max-w-full overflow-x-hidden", // ⬅ 가로 넘침 방지
       color
     )}
   >
@@ -188,8 +187,10 @@ const Accordion = ({ q }: { q: { question: string; reason?: string } }) => {
         onClick={() => setOpen(!open)}
         className="w-full flex justify-between items-center py-2 text-left text-gray-200 hover:text-white"
       >
-        <span>• {q.question}</span>
-        <span>{open ? "▲" : "▼"}</span>
+        <span className="flex-1 text-left break-words">
+          • {q.question}
+        </span>
+        <span className="ml-2 shrink-0">{open ? "▲" : "▼"}</span>
       </button>
 
       <AnimatePresence>
@@ -198,7 +199,7 @@ const Accordion = ({ q }: { q: { question: string; reason?: string } }) => {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="pl-4 text-sm text-gray-400"
+            className="pl-4 text-sm text-gray-400 break-words whitespace-pre-line"
           >
             {q.reason}
           </motion.div>
@@ -267,18 +268,23 @@ export default function AiFeedback(props: Props) {
 
   return (
     <motion.div
-      className="rounded-2xl border border-violet-600/40 bg-gradient-to-b from-[#0c0c20] to-[#0c0f29] p-8 space-y-10 shadow-[0_0_50px_rgba(139,92,246,0.2)]"
+      className={clsx(
+        "rounded-2xl border border-violet-600/40",
+        "bg-gradient-to-b from-[#0c0c20] to-[#0c0f29]",
+        "p-8 space-y-10 shadow-[0_0_50px_rgba(139,92,246,0.2)]",
+        "max-w-full overflow-x-hidden" // ⬅ 전체 카드도 가로 넘침 방지
+      )}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
     >
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center gap-4">
         <h2 className="text-2xl font-bold bg-gradient-to-r from-violet-300 to-sky-300 bg-clip-text text-transparent">
           🤖 AI 피드백 분석
         </h2>
 
         {score != null && (
-          <div className="px-4 py-2 rounded-full bg-violet-600/30 text-violet-200 text-sm font-medium border border-violet-500/40 shadow">
+          <div className="px-4 py-2 rounded-full bg-violet-600/30 text-violet-200 text-sm font-medium border border-violet-500/40 shadow shrink-0">
             총점 {score}
           </div>
         )}
@@ -291,12 +297,12 @@ export default function AiFeedback(props: Props) {
           color="border-violet-500/40 bg-violet-800/10"
         >
           {summary_interviewer && (
-            <p className="text-gray-300 whitespace-pre-line">
+            <p className="text-gray-300 whitespace-pre-line break-words">
               {summary_interviewer}
             </p>
           )}
           {summary_coach && (
-            <p className="text-gray-300 whitespace-pre-line">
+            <p className="text-gray-300 whitespace-pre-line break-words">
               {summary_coach}
             </p>
           )}
@@ -309,7 +315,7 @@ export default function AiFeedback(props: Props) {
         title="구조 분석"
         color="border-slate-700 bg-slate-900/40"
       >
-        <div className="w-full h-80 rounded-xl p-2">
+        <div className="w-full h-80 rounded-xl p-2 max-w-full overflow-x-hidden">
           <ResponsiveContainer width="100%" height="100%">
             <RadarChart
               cx="50%"
@@ -341,7 +347,9 @@ export default function AiFeedback(props: Props) {
           title="핵심 키워드"
           color="border-sky-500/40 bg-sky-800/10"
         >
-          <p className="text-gray-300 text-sm">{kw.join(", ")}</p>
+          <p className="text-gray-300 text-sm break-words">
+            {kw.join(", ")}
+          </p>
         </CardSection>
       )}
 
@@ -352,7 +360,7 @@ export default function AiFeedback(props: Props) {
           title="모범 답변"
           color="border-emerald-500/40 bg-emerald-800/10"
         >
-          <pre className="text-gray-200 whitespace-pre-wrap">
+          <pre className="text-gray-200 whitespace-pre-wrap break-words max-w-full overflow-x-auto">
             {polished}
           </pre>
         </CardSection>
@@ -365,7 +373,7 @@ export default function AiFeedback(props: Props) {
           title="강점"
           color="border-emerald-500/40 bg-emerald-700/10"
         >
-          <ul className="space-y-2 text-gray-300">
+          <ul className="space-y-2 text-gray-300 [&>li]:break-words">
             {str.map((s, i) => (
               <li key={i}>• {s}</li>
             ))}
@@ -380,7 +388,7 @@ export default function AiFeedback(props: Props) {
           title="개선 포인트"
           color="border-rose-500/40 bg-rose-700/10"
         >
-          <ul className="space-y-2 text-gray-300">
+          <ul className="space-y-2 text-gray-300 [&>li]:break-words">
             {gap.map((s, i) => (
               <li key={i}>• {s}</li>
             ))}
@@ -395,7 +403,7 @@ export default function AiFeedback(props: Props) {
           title="위험 요소"
           color="border-orange-500/40 bg-orange-700/10"
         >
-          <ul className="space-y-2 text-gray-300">
+          <ul className="space-y-2 text-gray-300 [&>li]:break-words">
             {pit.map((p, i) => (
               <li key={i}>
                 • 레벨 {p.level ?? "?"}: {p.text}
@@ -412,7 +420,7 @@ export default function AiFeedback(props: Props) {
           title="다음 단계"
           color="border-indigo-500/40 bg-indigo-700/10"
         >
-          <ul className="space-y-2 text-gray-300">
+          <ul className="space-y-2 text-gray-300 [&>li]:break-words">
             {nxt.map((s, i) => (
               <li key={i}>• {s}</li>
             ))}
