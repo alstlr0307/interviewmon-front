@@ -1,5 +1,5 @@
 // src/components/AiFeedback.tsx
-// Interviewmon — 공격형 면접 피드백 UI 최신 버전 (v3.1, safe text-wrap)
+// Interviewmon — 공격형 면접 피드백 UI 최신 버전 (v3.2, overflow-safe)
 
 import React, { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -52,7 +52,7 @@ type Props = {
 };
 
 /* =============================================================
- * Normalizers — 모든 타입을 프론트에서 안전하게 보정
+ * Normalizers
  * ============================================================= */
 const normalizeList = (arr?: any[] | null): string[] => {
   if (!arr) return [];
@@ -85,12 +85,9 @@ const normalizePitfalls = (arr?: PitItem[] | null): PitItem[] => {
 
 const normalizeFollowUps = (arr?: FollowUpItem[] | null) => {
   if (!arr) return [];
-
   return arr.map((v) => {
     if (!v) return { question: "", reason: "" };
-
     if (typeof v === "string") return { question: v, reason: "" };
-
     return {
       question: typeof v.question === "string" ? v.question.trim() : "",
       reason: typeof v.reason === "string" ? v.reason.trim() : "",
@@ -100,7 +97,6 @@ const normalizeFollowUps = (arr?: FollowUpItem[] | null) => {
 
 const normalizeChart = (chart?: Record<string, number | string> | null) => {
   if (!chart) return {};
-
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(chart)) {
     const num = typeof v === "string" ? Number(v) : v;
@@ -110,7 +106,7 @@ const normalizeChart = (chart?: Record<string, number | string> | null) => {
 };
 
 /* =============================================================
- * STAR 분석 / Specificity 분석
+ * STAR / Specificity
  * ============================================================= */
 function analyzeSTAR(a?: string | null) {
   const text = a || "";
@@ -163,7 +159,7 @@ const CardSection = ({
     className={clsx(
       "rounded-xl border p-6 space-y-3",
       "backdrop-blur-xl shadow-lg",
-      "max-w-full overflow-x-hidden", // ⬅ 가로 넘침 방지
+      "max-w-full overflow-x-hidden",
       color
     )}
   >
@@ -217,7 +213,6 @@ export default function AiFeedback(props: Props) {
     score,
     summary_interviewer,
     summary_coach,
-
     strengths,
     gaps,
     adds,
@@ -272,7 +267,7 @@ export default function AiFeedback(props: Props) {
         "rounded-2xl border border-violet-600/40",
         "bg-gradient-to-b from-[#0c0c20] to-[#0c0f29]",
         "p-8 space-y-10 shadow-[0_0_50px_rgba(139,92,246,0.2)]",
-        "max-w-full overflow-x-hidden" // ⬅ 전체 카드도 가로 넘침 방지
+        "max-w-full overflow-x-hidden"
       )}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -290,6 +285,7 @@ export default function AiFeedback(props: Props) {
         )}
       </div>
 
+      {/* 핵심 요약 */}
       {(summary_interviewer || summary_coach) && (
         <CardSection
           icon="📌"
@@ -353,16 +349,24 @@ export default function AiFeedback(props: Props) {
         </CardSection>
       )}
 
-      {/* Polished */}
+      {/* 모범 답변 */}
       {polished && (
         <CardSection
           icon="📝"
           title="모범 답변"
           color="border-emerald-500/40 bg-emerald-800/10"
         >
-          <pre className="text-gray-200 whitespace-pre-wrap break-words max-w-full overflow-x-auto">
+          <div
+            className="text-gray-200 text-sm md:text-base"
+            style={{
+              whiteSpace: "pre-wrap",       // 줄바꿈 유지
+              overflowWrap: "break-word",   // 길면 단어 쪼개기
+              wordBreak: "break-word",      // 긴 토큰도 강제 줄바꿈
+              maxWidth: "100%",
+            }}
+          >
             {polished}
-          </pre>
+          </div>
         </CardSection>
       )}
 
