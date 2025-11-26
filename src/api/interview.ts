@@ -16,6 +16,25 @@ export type QuestionItem = {
   score?: number | null;
   feedback?: string | null;
   durationMs?: number | null;
+
+  // 🔥 서버에서 내려오는 AI 고급 필드들
+  summary_interviewer?: string | null;
+  summary_coach?: string | null;
+  strengths?: string[] | null;
+  gaps?: string[] | null;
+  adds?: string[] | null;
+  pitfalls?: { text: string; level: number | null }[] | null;
+  next?: string[] | null;
+  polished?: string | null;
+  keywords?: string[] | null;
+  chart?: Record<string, number> | null;
+  follow_up_questions?: (
+    | string
+    | {
+        question: string;
+        reason?: string;
+      }
+  )[] | null;
 };
 
 /* -------------------------------------------
@@ -68,16 +87,29 @@ export async function startSession(
 
   return {
     sessionId: Number(data.sessionId),
-    items: (data.items || []).map((r: any) => ({
+    items: (data.items || []).map((r: any): QuestionItem => ({
       id: Number(r.id),
-      questionId: r.questionId != null ? Number(r.questionId) : null,
+      questionId:
+        r.questionId != null ? Number(r.questionId) : r.question_id ?? null,
       text: String(r.text),
       category: r.category ?? null,
-      orderNo: Number(r.orderNo),
+      orderNo: Number(r.orderNo ?? r.order_no ?? 0),
       answer: r.answer ?? null,
       score: r.score ?? null,
       feedback: r.feedback ?? null,
-      durationMs: r.durationMs ?? null,
+      durationMs: r.durationMs ?? r.duration_ms ?? null,
+
+      summary_interviewer: r.summary_interviewer ?? null,
+      summary_coach: r.summary_coach ?? null,
+      strengths: r.strengths ?? null,
+      gaps: r.gaps ?? null,
+      adds: r.adds ?? null,
+      pitfalls: r.pitfalls ?? null,
+      next: r.next ?? r.next_steps ?? null,
+      polished: r.polished ?? null,
+      keywords: r.keywords ?? null,
+      chart: r.chart ?? null,
+      follow_up_questions: r.follow_up_questions ?? r.follow_up ?? null,
     })),
   };
 }
@@ -93,16 +125,30 @@ export async function getSessionQuestions(
     params: { _ts: Date.now() },
   });
 
-  return (data.items || []).map((r: any) => ({
+  return (data.items || []).map((r: any): QuestionItem => ({
     id: Number(r.id),
-    questionId: r.questionId != null ? Number(r.questionId) : null,
+    questionId:
+      r.questionId != null ? Number(r.questionId) : r.question_id ?? null,
     text: String(r.text),
     category: r.category ?? null,
-    orderNo: Number(r.orderNo),
+    orderNo: Number(r.orderNo ?? r.order_no ?? 0),
+
     answer: r.answer ?? null,
     score: r.score ?? null,
     feedback: r.feedback ?? null,
-    durationMs: r.durationMs ?? null,
+    durationMs: r.durationMs ?? r.duration_ms ?? null,
+
+    summary_interviewer: r.summary_interviewer ?? null,
+    summary_coach: r.summary_coach ?? null,
+    strengths: r.strengths ?? null,
+    gaps: r.gaps ?? null,
+    adds: r.adds ?? null,
+    pitfalls: r.pitfalls ?? null,
+    next: r.next ?? r.next_steps ?? null,
+    polished: r.polished ?? null,
+    keywords: r.keywords ?? null,
+    chart: r.chart ?? null,
+    follow_up_questions: r.follow_up_questions ?? r.follow_up ?? null,
   }));
 }
 
@@ -191,7 +237,11 @@ export async function getSessionSummary(sessionId: number) {
  * ============================================================ */
 export async function attachQuestions(
   sessionId: number,
-  items: Array<{ text: string; category?: string | null; questionId?: number | null }>,
+  items: Array<{
+    text: string;
+    category?: string | null;
+    questionId?: number | null;
+  }>,
   options?: { replace?: boolean }
 ) {
   await http.post(`/sessions/${sessionId}/questions/attach`, {
