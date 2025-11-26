@@ -9,7 +9,7 @@ export type QuestionItem = {
   text: string;
   answer?: string | null;
   score?: number | null;
-  feedback?: string | null;      // DB 저장된 V5 전체 텍스트
+  feedback?: string | null; // DB 저장된 V5 전체 텍스트
   category?: string | null;
   durationMs?: number | null;
 };
@@ -27,6 +27,7 @@ function hashString(s: string) {
   return (h >>> 0).toString(36);
 }
 
+// 🔥 동일 세션/질문/답변 조합에 대해 AI 요청 1번만 보내도록 캐시
 const cache = new Map<string, AiResult>();
 
 /* ============================================================
@@ -77,6 +78,7 @@ export function useInterviewQuestions(
    * 질문 전환 시: draft/AI 초기화 + 기존 DB feedback 복원
    * ============================================================ */
   useEffect(() => {
+    // 디바운스 타이머 클리어
     if (timerRef.current) {
       window.clearTimeout(timerRef.current);
       timerRef.current = null;
@@ -90,8 +92,10 @@ export function useInterviewQuestions(
       return;
     }
 
+    // 답변 텍스트 복원
     setDraft(current.answer ?? "");
 
+    // 이미 점수/피드백이 저장된 문항이면 간단 버전으로 AI 상태 복원
     if (current.score != null || current.feedback) {
       const sc = current.score ?? 0;
 
@@ -109,11 +113,7 @@ export function useInterviewQuestions(
             : sc >= 50
             ? "D"
             : "F",
-
-        // DB에는 feedbackText 전체가 들어가 있으므로 summary로 대체해 표시
         summary: current.feedback ?? "",
-
-        // 강화형 필드는 새 grade 호출 시 채워짐
         summary_interviewer: null,
         summary_coach: null,
         strengths: null,
@@ -121,9 +121,10 @@ export function useInterviewQuestions(
         adds: null,
         pitfalls: null,
         next: null,
-        polished: null,
+        tips: null,
         keywords: null,
         category: current.category ?? null,
+        polished: null,
       });
     } else {
       setAi(null);
@@ -172,7 +173,6 @@ export function useInterviewQuestions(
         timerRef.current = null;
       }
 
-      // 이 시점의 questionId를 캡처 (질문 전환 대비)
       const qid = current.id;
 
       timerRef.current = window.setTimeout(async () => {
@@ -216,11 +216,47 @@ export function useInterviewQuestions(
 
   /* ============================================================
    * commit(): 문항 저장 + duration 기록
+   *  - 여기서도 마지막으로 채점이 안 되어 있으면 강제 채점
    * ============================================================ */
   const commit = useCallback(async () => {
     if (!sessionId || !current) return;
 
-    const spent = Math.max(0, Math.round(performance.now() - qStartRef.current));
+    // 디바운스 타이머 취소 (여기서 직접 채점/저장 처리)
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    const spent = Math.max(
+      0,
+      Math.round(performance.now() - qStartRef.current)
+    );
+
+    let finalAi = ai;
+    const trimmed = draft.trim();
+
+    // 아직 채점이 안 됐고, 글자 수가 충분하면 여기서 즉시 채점
+    if (!finalAi && trimmed.length >= minChars) {
+      setGrading(true);
+      const r = await runGrade(trimmed, current.id);
+      setGrading(false);
+
+      if (r && isMounted.current) {
+        finalAi = r;
+        setAi(r);
+        setList((prev) =>
+          prev.map((q) =>
+            q.id === current.id
+              ? {
+                  ...q,
+                  answer: trimmed,
+                  score: r.score,
+                }
+              : q
+          )
+        );
+      }
+    }
 
     const payload: {
       answer: string;
@@ -231,10 +267,13 @@ export function useInterviewQuestions(
       durationMs: spent,
     };
 
-    if (ai) payload.score = ai.score;
+    if (finalAi) {
+      payload.score = finalAi.score;
+    }
 
     try {
       await saveAnswer(sessionId, current.id, payload);
+
       setList((prev) =>
         prev.map((q) =>
           q.id === current.id
@@ -242,7 +281,7 @@ export function useInterviewQuestions(
                 ...q,
                 durationMs: spent,
                 answer: draft,
-                score: ai?.score ?? q.score,
+                score: finalAi?.score ?? q.score,
               }
             : q
         )
@@ -250,7 +289,7 @@ export function useInterviewQuestions(
     } catch (e) {
       console.error("[commit] saveAnswer error", e);
     }
-  }, [sessionId, current, draft, ai]);
+  }, [sessionId, current, draft, ai, minChars, runGrade]);
 
   const commitAndNext = useCallback(async () => {
     await commit();
