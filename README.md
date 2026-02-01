@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/alstlr0307/interview-api"><img src="https://img.shields.io/badge/Backend-Repo-181717?style=for-the-badge&logo=github&logoColor=white" /></a>
+  <a href="https://github.com/alstlr0307/interviewmon-api"><img src="https://img.shields.io/badge/Backend-Repo-181717?style=for-the-badge&logo=github&logoColor=white" /></a>
 </p>
 
 <br/>
@@ -80,4 +80,5 @@ npm start
 ### 참고
 - CRA 기반이며 기본 스크립트는 `start / build / test`를 사용합니다.
 - 백엔드 API 주소는 프로젝트의 API 설정 파일(axios/http) 기준으로 맞춰주세요.
+
 
