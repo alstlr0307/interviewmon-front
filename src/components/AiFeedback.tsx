@@ -215,7 +215,6 @@ export default function AiFeedback(props: Props) {
     summary_coach,
     strengths,
     gaps,
-    adds,
     pitfalls,
     next,
     polished,
