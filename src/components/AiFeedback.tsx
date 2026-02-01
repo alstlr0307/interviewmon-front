@@ -230,7 +230,6 @@ export default function AiFeedback(props: Props) {
 
   const str = normalizeList(strengths);
   const gap = normalizeList(gaps);
-  const add = normalizeList(adds);
   const pit = normalizePitfalls(pitfalls);
   const nxt = normalizeList(next);
   const kw = normalizeList(keywords);
