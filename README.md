@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=Noto+Sans+KR&size=32&pause=1200&color=111111&center=true&vCenter=true&width=1000&lines=Menjupmon+Frontend;Mock+Interview+UI+%26+Flow" alt="Menjupmon Frontend Typing" />
+  <img src="https://readme-typing-svg.demolab.com?font=Noto+Sans+KR&size=32&pause=1200&color=111111&center=true&vCenter=true&width=1000&lines=Interviewmon+Frontend;Mock+Interview+UI+%26+Flow" alt="Menjupmon Frontend Typing" />
 </p>
 
 <p align="center">
@@ -80,3 +80,4 @@ npm start
 ### 참고
 - CRA 기반이며 기본 스크립트는 `start / build / test`를 사용합니다.
 - 백엔드 API 주소는 프로젝트의 API 설정 파일(axios/http) 기준으로 맞춰주세요.
+
